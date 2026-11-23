@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import './map.css'
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5
 type Form = { name: string; email: string; purchase: string; object: string; advisor: string; income: string; otherIncome: string; debt: string; debtPayment: string; day: string; time: string; marketing: boolean }
@@ -9,12 +10,23 @@ const days = [['20', 'Сегодня'], ['21', 'Завтра'], ['22', 'Чт']]
 const times = ['10:00–12:00', '12:00–15:00', '15:00–18:00', '18:00–21:00']
 const initial: Form = { name: '', email: 'daria@example.com', purchase: '', object: '', advisor: '', income: '', otherIncome: '', debt: '', debtPayment: '', day: '', time: '', marketing: false }
 
-function App() {
+const METRIKA_ID = 99999999
+type MetricParams = Record<string, string | number | boolean>
+declare global { interface Window { ym?: (id: number, command: 'reachGoal', goal: string, params: MetricParams) => void } }
+function metric(goal: string, step: number, params: MetricParams = {}) {
+  const payload = { step, ...params }
+  // Заглушка Яндекс Метрики: при подключении счётчика замените номер выше.
+  window.ym?.(METRIKA_ID, 'reachGoal', goal, payload)
+  console.info('[Metrika stub]', goal, payload)
+}
+
+function MortgageForm() {
   const [step, setStep] = useState<Step>(0)
   const [form, setForm] = useState<Form>(initial)
   const [errors, setErrors] = useState<string[]>([])
-  const set = <K extends keyof Form>(key: K, value: Form[K]) => { setForm(current => ({ ...current, [key]: value })); setErrors(current => current.filter(error => error !== key)) }
+  const set = <K extends keyof Form>(key: K, value: Form[K]) => { setForm(current => ({ ...current, [key]: value })); setErrors(current => current.filter(error => error !== key)); if (['purchase', 'object', 'advisor', 'income', 'debt', 'day', 'time'].includes(key)) metric('mortgage_field_select', step, { field: key, value: String(value) }) }
   const active = step > 0 && step < 5
+  useEffect(() => { metric(step === 0 ? 'mortgage_form_open' : step === 5 ? 'mortgage_success_view' : 'mortgage_step_view', step) }, [step])
   const goNext = () => {
     const invalid: string[] = []
     if (step === 1) { if (form.name.trim().split(/\s+/).length < 2) invalid.push('name'); if (!/^\S+@\S+\.\S+$/.test(form.email)) invalid.push('email') }
@@ -22,7 +34,9 @@ function App() {
     if (step === 3) { if (!form.income) invalid.push('income'); if (form.income === 'other' && !/\d/.test(form.otherIncome)) invalid.push('otherIncome'); if (!form.debt) invalid.push('debt'); if (form.debt === 'yes' && !/\d/.test(form.debtPayment)) invalid.push('debtPayment') }
     if (step === 4 && (!form.day || !form.time)) invalid.push('call')
     if (invalid.length) { setErrors(invalid); return }
-    setErrors([]); setStep(current => Math.min(5, current + 1) as Step)
+    const next = Math.min(5, step + 1) as Step
+    metric(step === 4 ? 'mortgage_submit' : 'mortgage_step_continue', step, { to_step: next })
+    setErrors([]); setStep(next)
   }
   const Choice = ({ field, value, children, wide = false }: { field: keyof Form; value: string; children: React.ReactNode; wide?: boolean }) => <button className={`choice ${form[field] === value ? 'choice--selected' : ''} ${wide ? 'choice--wide' : ''}`} onClick={() => set(field, value)}>{children}</button>
   const Error = ({ id, children }: { id: string; children: React.ReactNode }) => errors.includes(id) ? <span className="error">{children}</span> : null
@@ -39,4 +53,16 @@ function App() {
 }
 
 function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: React.ReactNode }) { return <label className={error ? 'field field--invalid' : 'field'}><b>{label}</b>{children}{hint && <small>{hint}</small>}{error && <span className="error">{error}</span>}</label> }
+function ScenarioMap() {
+  const screens = [
+    ['0', 'Вход', 'Поможем с ипотекой', 'Калькулятор · 52 300 ₽'],
+    ['1', 'Контакты', 'Давайте познакомимся', 'ФИО · почта · телефон'],
+    ['2', 'Планы', 'Расскажите о планах', 'Покупка · объект · подбор'],
+    ['3', 'Доход', 'Оценим возможности', 'Доход · кредиты'],
+    ['4', 'Звонок', 'Когда удобно позвонить?', 'Дата · интервал'],
+    ['5', 'Успех', 'Заявка у эксперта', 'Подтверждённый звонок'],
+  ]
+  return <main className="map-page"><header className="map-header"><a href="/" className="map-brand">циан<span>.</span></a><a href="/" className="map-back">← К прототипу</a></header><section className="map-intro"><span className="map-kicker">Карта сценария · /map</span><h1>Короткая заявка на ипотеку</h1><p>Экранные события передаются в Метрику с параметром <code>step</code>. Счётчик — заглушка <code>{METRIKA_ID}</code>.</p></section><section className="map-flow" aria-label="Карта экранов и событий">{screens.map((screen, index) => <div className="map-node" key={screen[0]}><article className="screen-card"><div className="screen-top"><span>9:41</span><i>циан.</i></div><div className="screen-preview"><span className="screen-step">Шаг {screen[0]}</span><b>{screen[2]}</b><small>{screen[3]}</small><i /><i /><button>{index === 5 ? 'Готово' : 'Продолжить'}</button></div><footer>{screen[1]}</footer></article><div className="screen-events"><code>{index === 0 ? 'mortgage_form_open' : index === 5 ? 'mortgage_success_view' : 'mortgage_step_view'}</code><span>{`{ step: ${screen[0]} }`}</span>{index === 2 && <span>+ <code>mortgage_field_select</code></span>}{index === 3 && <span>+ поле платежа при <code>debt: yes</code></span>}</div>{index < screens.length - 1 && <div className="map-arrow"><span><code>{index === 4 ? 'mortgage_submit' : 'mortgage_step_continue'}</code> · {`{ step: ${screen[0]}, to_step: ${Number(screen[0]) + 1} }`}</span><b>↓</b></div>}</div>)}</section><section className="ab-test"><span className="map-kicker">План A/B-теста</span><h2>Проверяем, снижает ли короткая анкета барьер входа</h2><dl><div><dt>Гипотеза</dt><dd>Вариант B увеличит долю завершённых заявок без ухудшения качества лидов.</dd></div><div><dt>Вариант B</dt><dd>Вместо полной банковской анкеты — 4 коротких шага и звонок брокера.</dd></div><div><dt>Основная метрика</dt><dd><code>mortgage_success_view / mortgage_form_open</code>.</dd></div><div><dt>Ограничивающая метрика</dt><dd>Доля дозвонов брокера в выбранный пользователем интервал.</dd></div><div><dt>Выборка и срок</dt><dd>По 1 700 входов на вариант (3 400 всего); минимум 14 дней, чтобы покрыть недельную сезонность.</dd></div></dl></section></main>
+}
+function App() { return window.location.pathname === '/map' ? <ScenarioMap /> : <MortgageForm /> }
 export default App
